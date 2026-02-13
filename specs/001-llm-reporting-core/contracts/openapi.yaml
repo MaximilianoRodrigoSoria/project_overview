@@ -1,24 +1,63 @@
 openapi: 3.0.3
 info:
-  title: LLM Reporting Core API
+  title: LLM Reporting Core API - AI Reporting Lab Spec 1
   version: 1.0.0
-  description: API for generating downloadable reports with deterministic analysis and optional LLM narrative.
+  description: API para generar reportes descargables con análisis determinístico y narrativa LLM opcional. Arquitectura hexagonal - Módulo base únicamente.
 servers:
   - url: http://localhost:5000
+    description: Servidor de desarrollo local
+
 paths:
+  /:
+    get:
+      summary: Root endpoint
+      operationId: getRoot
+      responses:
+        "200":
+          description: Información básica del servicio
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: LLM Reporting Core API
+                  version:
+                    type: string
+                    example: "1.0.0"
+                additionalProperties: false
+
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Estado del servicio
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                additionalProperties: false
+
   /reports/download:
     post:
-      summary: Generate and download a report
+      summary: Genera y descarga un reporte en el formato especificado
       operationId: downloadReport
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReportRequest"
+              $ref: "#/components/schemas/ReportDownloadRequest"
             examples:
-              excel:
-                summary: Excel report
+              excel_with_llm:
+                summary: Reporte Excel con narrativa LLM
                 value:
                   report_name: audit_001
                   format: excel
@@ -27,45 +66,47 @@ paths:
                   llm_enabled: true
                   context:
                     tool: generic
-              csv:
-                summary: CSV report without narrative
+                    environment: production
+              csv_without_llm:
+                summary: Reporte CSV sin narrativa
                 value:
                   report_name: audit_002
                   format: csv
                   input_text: "sample text to analyze"
+                  run_id: run-002
                   llm_enabled: false
+                  context:
+                    tool: generic
+              markdown_minimal:
+                summary: Reporte Markdown mínimo
+                value:
+                  report_name: report_003
+                  format: markdown
+                  input_text: "another sample text"
+                  llm_enabled: false
+                  context:
+                    tool: generic
       responses:
         "200":
-          description: Binary report file
+          description: Archivo binario del reporte generado
           headers:
             Content-Disposition:
-              description: Attachment filename
+              description: Nombre del archivo adjunto
               schema:
                 type: string
-              example: attachment; filename="audit_001.xlsx"
+              example: 'attachment; filename="audit_001.xlsx"'
+            X-Run-Id:
+              description: ID de ejecución del reporte
+              schema:
+                type: string
+              example: run-001
           content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                type: string
-                format: binary
-            text/csv:
-              schema:
-                type: string
-                format: binary
-            text/plain:
-              schema:
-                type: string
-                format: binary
-            text/markdown:
-              schema:
-                type: string
-                format: binary
-            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            application/octet-stream:
               schema:
                 type: string
                 format: binary
         "400":
-          description: Validation error
+          description: Error de validación en la solicitud
           content:
             application/json:
               schema:
@@ -73,10 +114,10 @@ paths:
               example:
                 status: error
                 error_code: VALIDATION_ERROR
-                message: Missing required field: input_text
+                message: Missing required field input_text
                 run_id: run-123
         "422":
-          description: Invalid format
+          description: Formato no soportado o parámetros inválidos
           content:
             application/json:
               schema:
@@ -87,7 +128,7 @@ paths:
                 message: Format not supported
                 run_id: run-124
         "500":
-          description: Report generation or LLM provider error
+          description: Error interno del servidor o proveedor LLM
           content:
             application/json:
               schema:
@@ -97,10 +138,12 @@ paths:
                 error_code: REPORT_GENERATION_ERROR
                 message: Failed to generate report
                 run_id: run-125
+
 components:
   schemas:
     ReportFormat:
       type: string
+      description: Formatos de exportación soportados para reportes
       enum:
         - excel
         - csv
@@ -108,29 +151,55 @@ components:
         - markdown
         - doc
       example: excel
-    ReportRequest:
+
+    ReportDownloadRequest:
       type: object
+      description: Solicitud para generar y descargar un reporte
       required:
         - report_name
         - format
         - input_text
         - llm_enabled
+        - context
       properties:
         report_name:
           type: string
+          description: Nombre identificador del reporte
+          example: audit_001
         format:
           $ref: "#/components/schemas/ReportFormat"
         input_text:
           type: string
+          description: Texto de entrada a analizar
+          example: "sample text to analyze"
         run_id:
           type: string
+          description: ID de ejecución opcional (se genera automáticamente si no se provee)
+          example: run-001
         llm_enabled:
           type: boolean
+          description: Habilitar generación de narrativa con LLM
+          example: true
         context:
           type: object
-          additionalProperties: true
+          description: Contexto adicional para el análisis
+          required:
+            - tool
+          properties:
+            tool:
+              type: string
+              description: Herramienta que genera el reporte
+              example: generic
+            environment:
+              type: string
+              description: Entorno de ejecución
+              example: production
+          additionalProperties: false
+      additionalProperties: false
+
     ErrorResponse:
       type: object
+      description: Respuesta de error estándar
       required:
         - status
         - error_code
@@ -139,10 +208,20 @@ components:
       properties:
         status:
           type: string
+          description: Estado de la respuesta
+          enum:
+            - error
           example: error
         error_code:
           type: string
+          description: Código de error específico
+          example: VALIDATION_ERROR
         message:
           type: string
+          description: Mensaje descriptivo del error
+          example: Missing required field input_text
         run_id:
           type: string
+          description: ID de ejecución asociado al error
+          example: run-123
+      additionalProperties: false
