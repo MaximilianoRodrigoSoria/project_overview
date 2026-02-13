@@ -41,6 +41,8 @@ from src.domain.reporting.exceptions import (
     ReportGenerationError,
     LLMProviderError,
 )
+from src.domain.code_quality.dtos import CodeQualityReportRequest
+from src.domain.code_quality.use_case import GenerateCodeQualityReportUseCase
 from src.adapters.log_reader_fs import FileSystemLogReader
 from src.domain.log_analyzer.analyzer import LogAnalyzer
 from src.adapters.llm_factory import create_llm
@@ -134,6 +136,9 @@ analyze_use_case = AnalyzeLogUseCase(
     llm=llm,
     cache=cache
 )
+
+# Code Quality use case
+code_quality_use_case = GenerateCodeQualityReportUseCase(llm=llm)
 
 
 # =========================================================================
@@ -389,6 +394,215 @@ curl -X POST http://localhost:8080/reports/download \\
     }
 }
 
+CODE_QUALITY_REPORT_SWAGGER_SPEC = {
+    "tags": ["CodeQuality"],
+    "summary": "Analiza calidad de código y genera reporte descargable",
+    "description": """
+Feature: Code Quality Audit - Multi-tecnología
+
+Analiza proyectos locales (Spring Boot, Angular, Python) y genera reportes de calidad de código.
+
+**Tecnologías soportadas:**
+- `Spring Boot` - Detecta pom.xml/build.gradle + src/main/java
+- `Angular` - Detecta package.json + angular.json
+- `Python` - Detecta requirements.txt/pyproject.toml + archivos .py
+
+**Métricas generales:**
+- Total de archivos
+- Total de líneas
+- Promedio de líneas por archivo
+
+**Métricas específicas por tecnología:**
+
+*Spring Boot:*
+- Número de clases
+- Número de @RestController
+- Número de @Service
+- Número de @Repository
+
+*Angular:*
+- Número de componentes (.component.ts)
+- Número de services (.service.ts)
+- Estimación de bundle size
+
+*Python:*
+- Número de módulos
+- Número de funciones
+- Número de clases
+
+**Ejemplo de uso:**
+```bash
+curl -X POST http://localhost:8080/code-quality/reports/download \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "report_name": "quality_001",
+    "format": "excel",
+    "project_path": "/path/to/project",
+    "llm_enabled": true,
+    "context": {
+      "tech": "auto"
+    }
+  }' --output quality_report.xlsx
+```
+""",
+    "consumes": ["application/json"],
+    "produces": ["application/octet-stream"],
+    "parameters": [
+        {
+            "in": "body",
+            "name": "body",
+            "description": "Payload para análisis de calidad de código",
+            "required": True,
+            "schema": {
+                "type": "object",
+                "required": ["report_name", "format", "project_path"],
+                "additionalProperties": False,
+                "properties": {
+                    "report_name": {
+                        "type": "string",
+                        "description": "Nombre del reporte de calidad",
+                        "example": "quality_001",
+                        "minLength": 1
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Formato de exportación",
+                        "enum": ["excel", "csv", "txt", "markdown", "doc"],
+                        "example": "excel"
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Ruta absoluta al proyecto a analizar",
+                        "example": "C:/projects/my-spring-app",
+                        "minLength": 1
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "description": "ID de ejecución opcional",
+                        "example": "run-quality-001"
+                    },
+                    "llm_enabled": {
+                        "type": "boolean",
+                        "description": "Generar narrativa técnica con LLM",
+                        "example": True
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Idioma para la narrativa LLM (solo afecta narrativa, no métricas)",
+                        "enum": ["es-AR", "es", "en"],
+                        "default": "es-AR",
+                        "example": "es-AR"
+                    },
+                    "include_globs": {
+                        "type": "array",
+                        "description": "Patrones de archivos a incluir (opcional)",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": ["**/*.java", "**/*.ts"]
+                    },
+                    "exclude_globs": {
+                        "type": "array",
+                        "description": "Patrones de archivos a excluir",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": ["**/target/**", "**/node_modules/**"]
+                    },
+                    "context": {
+                        "type": "object",
+                        "description": "Contexto del análisis (objeto cerrado)",
+                        "additionalProperties": False,
+                        "properties": {
+                            "tech": {
+                                "type": "string",
+                                "description": "Tecnología (auto detecta si es 'auto')",
+                                "example": "auto"
+                            }
+                        }
+                    }
+                },
+                "example": {
+                    "report_name": "quality_001",
+                    "format": "excel",
+                    "project_path": "C:/projects/my-app",
+                    "run_id": "run-quality-001",
+                    "llm_enabled": True,
+                    "language": "es-AR",
+                    "include_globs": [],
+                    "exclude_globs": ["**/target/**", "**/node_modules/**"],
+                    "context": {
+                        "tech": "auto"
+                    }
+                }
+            }
+        }
+    ],
+    "responses": {
+        200: {
+            "description": "Reporte de calidad generado (attachment)",
+            "headers": {
+                "Content-Disposition": {
+                    "description": "Nombre del archivo",
+                    "type": "string",
+                    "example": "attachment; filename=\"quality_001.xlsx\""
+                },
+                "X-Run-Id": {
+                    "description": "ID de ejecución",
+                    "type": "string",
+                    "example": "run-quality-001"
+                }
+            },
+            "schema": {
+                "type": "string",
+                "format": "binary"
+            }
+        },
+        400: {
+            "description": "Error de validación o tecnología no detectada",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {"type": "string", "enum": ["error"]},
+                    "error_code": {"type": "string", "example": "VALIDATION_ERROR"},
+                    "message": {"type": "string", "example": "Project path does not exist"},
+                    "run_id": {"type": "string", "example": "run-123"}
+                }
+            }
+        },
+        422: {
+            "description": "Formato no soportado",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {"type": "string", "enum": ["error"]},
+                    "error_code": {"type": "string", "example": "INVALID_FORMAT"},
+                    "message": {"type": "string"},
+                    "run_id": {"type": "string"}
+                }
+            }
+        },
+        500: {
+            "description": "Error durante análisis o generación",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {"type": "string", "enum": ["error"]},
+                    "error_code": {"type": "string", "example": "REPORT_GENERATION_ERROR"},
+                    "message": {"type": "string"},
+                    "run_id": {"type": "string"}
+                }
+            }
+        }
+    }
+}
+
 
 # =========================================================================
 # ENDPOINTS
@@ -508,6 +722,67 @@ def download_report():
     response = Response(content, mimetype=format_mime[result.format])
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     response.headers["X-Run-Id"] = report_request.run_id
+    
+    return response
+
+
+@app.route("/code-quality/reports/download", methods=["POST"])
+@swag_from(CODE_QUALITY_REPORT_SWAGGER_SPEC)
+def download_code_quality_report():
+    """Endpoint para análisis de calidad de código y descarga de reporte."""
+    
+    # Validar Content-Type
+    if not request.is_json:
+        raise ValidationError("Content-Type must be application/json")
+    
+    # Parsear y validar request
+    data = request.get_json() or {}
+    quality_request = CodeQualityReportRequest.from_dict(data)
+    
+    logger.info(
+        f"[{quality_request.run_id}] Starting code quality analysis: "
+        f"{quality_request.report_name} @ {quality_request.project_path}"
+    )
+    
+    # Ejecutar caso de uso
+    result = code_quality_use_case.execute(quality_request)
+    payload = code_quality_use_case.to_writer_payload(result)
+    
+    # Obtener writer según formato
+    writer = get_writer(result.format)
+    
+    # Generar contenido en bytes
+    try:
+        content = writer.write(payload)
+    except Exception as exc:
+        logger.error(f"[{quality_request.run_id}] Error writing report: {exc}")
+        raise ReportGenerationError(str(exc), run_id=quality_request.run_id)
+    
+    # Mapeo de formatos
+    format_mime = {
+        ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
+        ReportFormat.CSV: Constants.MIME_TYPE_CSV,
+        ReportFormat.TXT: Constants.MIME_TYPE_TXT,
+        ReportFormat.MARKDOWN: "text/markdown",
+        ReportFormat.DOC: Constants.MIME_TYPE_DOC,
+    }
+    
+    format_ext = {
+        ReportFormat.EXCEL: ".xlsx",
+        ReportFormat.CSV: ".csv",
+        ReportFormat.TXT: ".txt",
+        ReportFormat.MARKDOWN: ".md",
+        ReportFormat.DOC: ".docx",
+    }
+    
+    filename = f"{quality_request.report_name}{format_ext[result.format]}"
+    
+    logger.info(f"[{quality_request.run_id}] Code quality report generated: {filename}")
+    
+    # Crear respuesta
+    response = Response(content, mimetype=format_mime[result.format])
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["X-Run-Id"] = quality_request.run_id
     
     return response
 
