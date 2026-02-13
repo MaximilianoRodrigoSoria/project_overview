@@ -1,6 +1,6 @@
 """
-Entrypoint API (Flask) para log_analyzer.
-Expone endpoint REST para análisis de logs con Swagger UI.
+Entrypoint API (Flask) para AI Reporting Lab - Spec 1.
+Expone endpoint REST para generación de reportes con Swagger UI.
 
 ADVERTENCIA DE SEGURIDAD:
 ⚠️ Esta API NO tiene autenticación implementada.
@@ -35,10 +35,11 @@ from src.domain.reporting.dtos import ReportRequest as ReportingRequest
 from src.domain.reporting.use_case import GenerateReportUseCase as ReportingGenerateReportUseCase
 from src.domain.reporting.enums import ReportFormat
 from src.domain.reporting.exceptions import (
-  ReportingError,
-  InvalidFormatError,
-  ValidationError,
-  ReportGenerationError,
+    ReportingError,
+    InvalidFormatError,
+    ValidationError,
+    ReportGenerationError,
+    LLMProviderError,
 )
 from src.adapters.log_reader_fs import FileSystemLogReader
 from src.domain.log_analyzer.analyzer import LogAnalyzer
@@ -74,11 +75,11 @@ swagger_config = {
 swagger_template = {
     "swagger": "2.0",
     "info": {
-        "title": "Log Analyzer API",
-        "description": "API REST para análisis automático de logs con LLM (Ollama)",
+        "title": "LLM Reporting Core API - AI Reporting Lab Spec 1",
+        "description": "API REST para generación de reportes con análisis determinístico y narrativa LLM opcional. Arquitectura hexagonal - Módulo base únicamente.",
         "version": "1.0.0",
         "contact": {
-            "name": "Log Analyzer",
+            "name": "AI Reporting Lab",
             "url": "https://github.com/log-analyzer"
         }
     },
@@ -135,6 +136,264 @@ analyze_use_case = AnalyzeLogUseCase(
 )
 
 
+# =========================================================================
+# DOCUMENTACIÓN SWAGGER PROFESIONAL
+# =========================================================================
+
+DOWNLOAD_REPORT_SWAGGER_SPEC = {
+    "tags": ["Reports"],
+    "summary": "Genera y descarga un reporte en el formato especificado",
+    "description": """
+Endpoint principal del Spec 1 - AI Reporting Lab.
+
+Genera un reporte con análisis determinístico y narrativa LLM opcional.
+El reporte se retorna como archivo descargable (attachment) sin guardarse permanentemente.
+
+**Formatos soportados:**
+- `excel` - Archivo Excel (.xlsx) con tablas formateadas
+- `csv` - Archivo CSV con datos tabulares
+- `txt` - Archivo de texto plano
+- `markdown` - Archivo Markdown (.md)
+- `doc` - Archivo Word (.docx)
+
+**Arquitectura:**
+- Módulo: Spec 1 (base)
+- Patrón: Arquitectura hexagonal
+- Output: Bytes en memoria (no persiste en carpeta)
+- Validación: Schema cerrado, sin propiedades adicionales
+
+**Ejemplo de uso:**
+```bash
+curl -X POST http://localhost:8080/reports/download \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "report_name": "audit_001",
+    "format": "excel",
+    "input_text": "sample text to analyze",
+    "run_id": "run-001",
+    "llm_enabled": true,
+    "context": {
+      "tool": "generic",
+      "environment": "production"
+    }
+  }' --output report.xlsx
+```
+""",
+    "consumes": ["application/json"],
+    "produces": ["application/octet-stream"],
+    "parameters": [
+        {
+            "in": "body",
+            "name": "body",
+            "description": "Payload para generar el reporte",
+            "required": True,
+            "schema": {
+                "type": "object",
+                "required": ["report_name", "format", "input_text", "llm_enabled", "context"],
+                "additionalProperties": False,
+                "properties": {
+                    "report_name": {
+                        "type": "string",
+                        "description": "Nombre identificador del reporte",
+                        "example": "audit_001",
+                        "minLength": 1
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Formato de exportación del reporte",
+                        "enum": ["excel", "csv", "txt", "markdown", "doc"],
+                        "example": "excel"
+                    },
+                    "input_text": {
+                        "type": "string",
+                        "description": "Texto de entrada a analizar",
+                        "example": "sample text to analyze",
+                        "minLength": 1
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "description": "ID de ejecución opcional (se genera automáticamente si no se provee)",
+                        "example": "run-001"
+                    },
+                    "llm_enabled": {
+                        "type": "boolean",
+                        "description": "Habilitar generación de narrativa con LLM",
+                        "example": True
+                    },
+                    "context": {
+                        "type": "object",
+                        "description": "Contexto adicional para el análisis (objeto cerrado)",
+                        "required": ["tool"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "tool": {
+                                "type": "string",
+                                "description": "Herramienta que genera el reporte",
+                                "example": "generic"
+                            },
+                            "environment": {
+                                "type": "string",
+                                "description": "Entorno de ejecución opcional",
+                                "example": "production"
+                            }
+                        },
+                        "example": {
+                            "tool": "generic",
+                            "environment": "production"
+                        }
+                    }
+                },
+                "example": {
+                    "report_name": "audit_001",
+                    "format": "excel",
+                    "input_text": "sample text to analyze",
+                    "run_id": "run-001",
+                    "llm_enabled": True,
+                    "context": {
+                        "tool": "generic",
+                        "environment": "production"
+                    }
+                }
+            }
+        }
+    ],
+    "responses": {
+        200: {
+            "description": "Archivo binario del reporte generado (attachment)",
+            "headers": {
+                "Content-Disposition": {
+                    "description": "Nombre del archivo adjunto",
+                    "type": "string",
+                    "example": "attachment; filename=\"audit_001.xlsx\""
+                },
+                "X-Run-Id": {
+                    "description": "ID de ejecución del reporte",
+                    "type": "string",
+                    "example": "run-001"
+                }
+            },
+            "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "Contenido binario del archivo (Excel, CSV, TXT, Markdown o DOC)"
+            }
+        },
+        400: {
+            "description": "Error de validación en la solicitud",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["error"],
+                        "example": "error"
+                    },
+                    "error_code": {
+                        "type": "string",
+                        "example": "VALIDATION_ERROR",
+                        "description": "Código de error: VALIDATION_ERROR"
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Missing required field: input_text"
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "example": "run-123"
+                    }
+                }
+            },
+            "examples": {
+                "application/json": {
+                    "status": "error",
+                    "error_code": "VALIDATION_ERROR",
+                    "message": "Missing required field: input_text",
+                    "run_id": "run-123"
+                }
+            }
+        },
+        422: {
+            "description": "Formato no soportado o parámetros inválidos",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["error"],
+                        "example": "error"
+                    },
+                    "error_code": {
+                        "type": "string",
+                        "example": "INVALID_FORMAT",
+                        "description": "Código de error: INVALID_FORMAT"
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Format not supported"
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "example": "run-124"
+                    }
+                }
+            },
+            "examples": {
+                "application/json": {
+                    "status": "error",
+                    "error_code": "INVALID_FORMAT",
+                    "message": "Format not supported: pdf",
+                    "run_id": "run-124"
+                }
+            }
+        },
+        500: {
+            "description": "Error interno del servidor o proveedor LLM",
+            "schema": {
+                "type": "object",
+                "required": ["status", "error_code", "message", "run_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["error"],
+                        "example": "error"
+                    },
+                    "error_code": {
+                        "type": "string",
+                        "example": "REPORT_GENERATION_ERROR",
+                        "description": "Códigos: REPORT_GENERATION_ERROR, LLM_PROVIDER_ERROR, REPORTING_ERROR"
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Failed to generate report"
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "example": "run-125"
+                    }
+                }
+            },
+            "examples": {
+                "application/json": {
+                    "status": "error",
+                    "error_code": "REPORT_GENERATION_ERROR",
+                    "message": "Failed to generate report",
+                    "run_id": "run-125"
+                }
+            }
+        }
+    }
+}
+
+
+# =========================================================================
+# ENDPOINTS
+# =========================================================================
+
 @app.route("/", methods=["GET"])
 def index():
     """
@@ -147,10 +406,11 @@ def index():
         description: Información del servicio
         schema:
           type: object
+          additionalProperties: false
           properties:
             service:
               type: string
-              example: log_analyzer
+              example: AI Reporting Lab - Spec 1
             version:
               type: string
               example: 1.0.0
@@ -159,420 +419,15 @@ def index():
               example: http://localhost:8080/apidocs
     """
     return jsonify({
-        "service": "log_analyzer",
+        "service": "AI Reporting Lab - Spec 1",
         "version": "1.0.0",
         "swagger_ui": "http://localhost:8080/apidocs",
         "endpoints": {
-            "/datasets": "GET - Lista archivos de logs disponibles",
-            "/reports/download": "POST - Descarga reporte en formato (excel, txt, csv, doc)",
-            "/analyze": "POST - Analiza logs y genera reporte"
-        },
-        "config": {
-            "ollama_model": settings.OLLAMA_MODEL,
-            "ollama_url": settings.OLLAMA_BASE_URL,
-            "output_dir": str(settings.OUT_DIR),
-            "datasets_dir": str(settings.DATASETS_DIR)
+            "/": "GET - Info de la API",
+            "/health": "GET - Health check",
+            "/reports/download": "POST - Descarga reporte en formato especificado"
         }
     })
-
-
-@app.route("/datasets", methods=["GET"])
-def list_datasets():
-    """
-    Lista archivos de logs disponibles
-    ---
-    tags:
-      - Datasets
-    responses:
-      200:
-        description: Lista de archivos .txt en datasets/
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: success
-            files:
-              type: array
-              items:
-                type: object
-                properties:
-                  name:
-                    type: string
-                    example: generated_logs.txt
-                  size_bytes:
-                    type: integer
-                    example: 1024
-                  path:
-                    type: string
-                    example: /absolute/path/to/generated_logs.txt
-            count:
-              type: integer
-              example: 2
-      404:
-        description: Directorio de datasets no existe
-      500:
-        description: Error interno del servidor
-    """
-    try:
-        # Usar el use case para listar logs
-        result = list_logs_use_case.execute(str(settings.DATASETS_DIR))
-        
-        return jsonify({
-            Constants.API_RESPONSE_STATUS: Constants.STATUS_SUCCESS,
-            "files": result["files"],
-            "count": result["count"]
-        }), 200
-        
-    except FileNotFoundError as e:
-        logger.error(f"Error al listar datasets: directorio no encontrado: {e}")
-        return jsonify({
-            Constants.API_RESPONSE_STATUS: Constants.STATUS_ERROR,
-            Constants.API_RESPONSE_ERROR: "Directorio de datasets no existe"
-        }), 404
-        
-    except Exception as e:
-        logger.error(f"Error al listar datasets: {e}", exc_info=True)
-        return jsonify({
-            Constants.API_RESPONSE_STATUS: Constants.STATUS_ERROR,
-            Constants.API_RESPONSE_ERROR: str(e)
-        }), 500
-
-
-@app.route("/reports/download", methods=["POST"])
-def download_report():
-    """Generate a report and return it as a downloadable attachment.
-    ---
-    tags:
-      - Reports
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - report_name
-            - format
-            - input_text
-            - llm_enabled
-          properties:
-            report_name:
-              type: string
-              example: audit_001
-            format:
-              type: string
-              enum: [excel, csv, txt, markdown, doc]
-              example: excel
-            input_text:
-              type: string
-              example: sample text to analyze
-            run_id:
-              type: string
-              example: run-001
-            llm_enabled:
-              type: boolean
-              example: true
-            context:
-              type: object
-              additionalProperties: true
-        examples:
-          excel:
-            report_name: audit_001
-            format: excel
-            input_text: sample text to analyze
-            llm_enabled: true
-          csv:
-            report_name: audit_002
-            format: csv
-            input_text: sample text to analyze
-            llm_enabled: false
-    responses:
-      200:
-        description: Binary report file
-      400:
-        description: Validation error
-      422:
-        description: Invalid format
-      500:
-        description: Report generation error
-    """
-    if not request.is_json:
-        raise ValidationError("Content-Type must be application/json")
-
-    data = request.get_json() or {}
-    report_request = ReportingRequest.from_dict(data)
-
-    result = reporting_use_case.execute(report_request)
-    payload = reporting_use_case.to_writer_payload(result)
-    writer = get_writer(result.format)
-
-    try:
-        content = writer.write(payload)
-    except Exception as exc:
-        raise ReportGenerationError(str(exc), run_id=report_request.run_id)
-
-    format_mime = {
-        ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
-        ReportFormat.CSV: Constants.MIME_TYPE_CSV,
-        ReportFormat.TXT: Constants.MIME_TYPE_TXT,
-        ReportFormat.MARKDOWN: "text/markdown",
-        ReportFormat.DOC: Constants.MIME_TYPE_DOC,
-    }
-
-    format_ext = {
-        ReportFormat.EXCEL: ".xlsx",
-        ReportFormat.CSV: ".csv",
-        ReportFormat.TXT: ".txt",
-        ReportFormat.MARKDOWN: ".md",
-        ReportFormat.DOC: ".doc",
-    }
-
-    filename = f"{report_request.report_name}{format_ext[result.format]}"
-
-    response = Response(content, mimetype=format_mime[result.format])
-    response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
-    response.headers["X-Run-Id"] = report_request.run_id
-    return response
-
-
-@app.errorhandler(ReportingError)
-def handle_reporting_error(error: ReportingError):
-    status_code = 500
-    if isinstance(error, ValidationError):
-        status_code = 400
-    elif isinstance(error, InvalidFormatError):
-        status_code = 422
-
-    return jsonify({
-        "status": "error",
-        "error_code": error.error_code,
-        "message": error.message,
-        "run_id": error.run_id
-    }), status_code
-
-
-@app.route(Constants.API_ENDPOINT_ANALYZE, methods=["POST"])
-def analyze():
-    """
-    Analiza logs y descarga el reporte en formato configurable
-    ---
-    tags:
-      - Análisis
-    parameters:
-      - in: body
-        name: body
-        required: true
-        description: |
-          Solicitud de análisis de logs con descarga automática.
-          
-          **Formatos disponibles:**
-          - `excel` - Archivo Excel (.xlsx) con tablas formateadas
-          - `csv` - Archivo CSV con datos tabulares
-          - `txt` - Archivo de texto plano
-          - `markdown` - Archivo Markdown con formato
-          - `doc` - Archivo Word (.docx) - requiere python-docx instalado
-        schema:
-          type: object
-          required:
-            - input_log_filename
-            - output_filename
-            - output_format
-          properties:
-            input_log_filename:
-              type: string
-              description: Nombre del archivo de log en datasets/
-              example: generated_logs.txt
-            output_filename:
-              type: string
-              description: Nombre del archivo de salida (sin extensión)
-              example: informe_produccion
-            output_format:
-              type: string
-              description: Formato de salida del reporte
-              enum: [excel, csv, txt, markdown, doc]
-              example: excel
-          example:
-            input_log_filename: generated_logs.txt
-            output_filename: informe_produccion
-            output_format: excel
-    responses:
-      200:
-        description: Descarga directa del archivo generado
-        content:
-          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-            schema:
-              type: string
-              format: binary
-          text/csv:
-            schema:
-              type: string
-          application/msword:
-            schema:
-              type: string
-              format: binary
-          text/plain:
-            schema:
-              type: string
-          text/markdown:
-            schema:
-              type: string
-      400:
-        description: Error de validación
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 400
-            message:
-              type: string
-              example: Error de validación
-            details:
-              type: string
-            run_id:
-              type: string
-              nullable: true
-      404:
-        description: Archivo de log no encontrado
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 404
-            message:
-              type: string
-              example: Archivo no encontrado
-            details:
-              type: string
-            run_id:
-              type: string
-      500:
-        description: Error interno del servidor
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 500
-            message:
-              type: string
-              example: Error interno del servidor
-            details:
-              type: string
-            run_id:
-              type: string
-    """
-    run_id = None
-    
-    try:
-        # Validar Content-Type
-        if not request.is_json:
-            error = ErrorResponse(
-                code=400,
-                message="Content-Type debe ser application/json",
-                details=None
-            )
-            return jsonify(error.to_dict()), 400
-        
-        # Obtener datos del request
-        data = request.get_json()
-        
-        # Parsear y validar request usando DTO
-        try:
-            analyze_request = AnalyzeRequest.from_dict(data)
-            run_id = analyze_request.run_id
-        except ValueError as e:
-            logger.error(f"Error de validación: {e}")
-            error = ErrorResponse(
-                code=400,
-                message="Error de validación",
-                details=str(e),
-                run_id=run_id
-            )
-            return jsonify(error.to_dict()), 400
-        
-        logger.info(
-            f"[{run_id}] Solicitud de análisis recibida: "
-            f"input={analyze_request.input_log_filename}, "
-            f"output={analyze_request.output_filename}.{analyze_request.output_format.value}"
-        )
-        
-        # Ejecutar caso de uso
-        response = analyze_use_case.execute(analyze_request)
-        
-        # Si la respuesta tiene status error, retornar el error apropiado
-        if response.status == 'error':
-            # Determinar código de error según el mensaje
-            status_code = 500
-            
-            if "no encontrado" in response.errors.lower() or "no existe" in response.errors.lower():
-                status_code = 404
-            elif "timeout" in response.errors.lower():
-                status_code = 504
-            elif "conectar" in response.errors.lower():
-                status_code = 503
-            
-            error = ErrorResponse(
-                code=status_code,
-                message=response.errors,
-                details=None,
-                run_id=run_id
-            )
-            return jsonify(error.to_dict()), status_code
-        
-        # Respuesta exitosa: descargar archivo
-        logger.info(f"[{run_id}] Análisis completado exitosamente: {response.output_path}")
-        
-        # Determinar MIME type según formato
-        mime_type = Constants.FORMAT_MIME_TYPES.get(
-            response.output_format, 
-            'application/octet-stream'
-        )
-        
-        # Obtener extensión del archivo
-        from pathlib import Path
-        output_file = Path(response.output_path)
-        download_name = f"{analyze_request.output_filename}{output_file.suffix}"
-        
-        # Enviar archivo para descarga
-        return send_file(
-            response.output_path,
-            mimetype=mime_type,
-            as_attachment=True,
-            download_name=download_name
-        )
-        
-    except ConnectionError as e:
-        logger.error(f"[{run_id}] Error de conexión: {e}")
-        error = ErrorResponse(
-            code=503,
-            message="No se puede conectar al proveedor LLM",
-            details=str(e),
-            run_id=run_id
-        )
-        return jsonify(error.to_dict()), 503
-        
-    except TimeoutError as e:
-        logger.error(f"[{run_id}] Timeout: {e}")
-        error = ErrorResponse(
-            code=504,
-            message="Timeout al procesar request",
-            details=str(e),
-            run_id=run_id
-        )
-        return jsonify(error.to_dict()), 504
-        
-    except Exception as e:
-        logger.error(f"[{run_id}] Error inesperado: {e}", exc_info=True)
-        error = ErrorResponse(
-            code=500,
-            message="Error interno del servidor",
-            details=str(e),
-            run_id=run_id
-        )
-        return jsonify(error.to_dict()), 500
 
 
 @app.route("/health", methods=["GET"])
@@ -587,31 +442,129 @@ def health():
         description: Servicio saludable
         schema:
           type: object
+          additionalProperties: false
           properties:
             status:
               type: string
               example: healthy
-            ollama_url:
-              type: string
-              example: http://localhost:11434
-            model:
-              type: string
-              example: mistral
     """
     return jsonify({
-        "status": "healthy",
-        "ollama_url": settings.OLLAMA_BASE_URL,
-        "model": settings.OLLAMA_MODEL
+        "status": "healthy"
     }), 200
 
 
+@app.route("/reports/download", methods=["POST"])
+@swag_from(DOWNLOAD_REPORT_SWAGGER_SPEC)
+def download_report():
+    """Endpoint principal para generar y descargar reportes (Spec 1)."""
+    
+    # Validar Content-Type
+    if not request.is_json:
+        raise ValidationError("Content-Type must be application/json")
+
+    # Parsear y validar request
+    data = request.get_json() or {}
+    report_request = ReportingRequest.from_dict(data)
+
+    logger.info(f"[{report_request.run_id}] Generando reporte: {report_request.report_name} ({report_request.format.value})")
+
+    # Ejecutar caso de uso
+    result = reporting_use_case.execute(report_request)
+    payload = reporting_use_case.to_writer_payload(result)
+    
+    # Obtener writer según formato
+    writer = get_writer(result.format)
+
+    # Generar contenido en bytes
+    try:
+        content = writer.write(payload)
+    except Exception as exc:
+        logger.error(f"[{report_request.run_id}] Error al escribir reporte: {exc}")
+        raise ReportGenerationError(str(exc), run_id=report_request.run_id)
+
+    # Mapeo de formatos a MIME types
+    format_mime = {
+        ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
+        ReportFormat.CSV: Constants.MIME_TYPE_CSV,
+        ReportFormat.TXT: Constants.MIME_TYPE_TXT,
+        ReportFormat.MARKDOWN: "text/markdown",
+        ReportFormat.DOC: Constants.MIME_TYPE_DOC,
+    }
+
+    # Mapeo de formatos a extensiones
+    format_ext = {
+        ReportFormat.EXCEL: ".xlsx",
+        ReportFormat.CSV: ".csv",
+        ReportFormat.TXT: ".txt",
+        ReportFormat.MARKDOWN: ".md",
+        ReportFormat.DOC: ".docx",
+    }
+
+    filename = f"{report_request.report_name}{format_ext[result.format]}"
+    
+    logger.info(f"[{report_request.run_id}] Reporte generado exitosamente: {filename}")
+
+    # Crear respuesta con headers apropiados
+    response = Response(content, mimetype=format_mime[result.format])
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["X-Run-Id"] = report_request.run_id
+    
+    return response
+
+
+# =========================================================================
+# ERROR HANDLERS GLOBALES
+# =========================================================================
+
+@app.errorhandler(ReportingError)
+def handle_reporting_error(error: ReportingError):
+    """Handler global para errores del dominio reporting."""
+    
+    # Mapear tipo de error a status code HTTP
+    status_code = 500
+    if isinstance(error, ValidationError):
+        status_code = 400
+    elif isinstance(error, InvalidFormatError):
+        status_code = 422
+    elif isinstance(error, LLMProviderError):
+        status_code = 500
+    elif isinstance(error, ReportGenerationError):
+        status_code = 500
+    
+    logger.error(f"[{error.run_id}] {error.error_code}: {error.message}")
+
+    return jsonify({
+        "status": "error",
+        "error_code": error.error_code,
+        "message": error.message,
+        "run_id": error.run_id or "unknown"
+    }), status_code
+
+
+@app.errorhandler(Exception)
+def handle_generic_error(error: Exception):
+    """Handler global para errores no controlados."""
+    logger.error(f"Unhandled error: {error}", exc_info=True)
+    
+    return jsonify({
+        "status": "error",
+        "error_code": "INTERNAL_SERVER_ERROR",
+        "message": str(error),
+        "run_id": "unknown"
+    }), 500
+
+
+# =========================================================================
+# APPLICATION FACTORY
+# =========================================================================
+
 def create_app():
-    """Factory function para crear la aplicación Flask (útil para testing)"""
+    """Factory function para crear la aplicación Flask (útil para testing)."""
     return app
 
 
 def main():
-    """Inicia el servidor Flask"""
+    """Inicia el servidor Flask."""
     import sys
     import io
     
@@ -619,26 +572,28 @@ def main():
     if sys.platform == 'win32':
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     
-    print("=" * 60)
-    print("  Log Analyzer API")
-    print("=" * 60)
+    print("=" * 70)
+    print("  AI Reporting Lab - Spec 1")
+    print("  LLM Reporting Core API")
+    print("=" * 70)
     print()
-    print(f"  Ollama URL: {settings.OLLAMA_BASE_URL}")
-    print(f"  Modelo: {settings.OLLAMA_MODEL}")
-    print(f"  Output: {settings.OUT_DIR}")
+    print("  Arquitectura: Hexagonal")
+    print("  Módulo: Base (Spec 1)")
     print()
-    # Usar versión sin emojis para compatibilidad Windows
-    print("  WARNING: Esta API no tiene autenticacion. No exponer en produccion sin seguridad.")
-    print("  WARNING: Riesgo de prompt injection si los logs contienen instrucciones maliciosas.")
+    print(f"  LLM Provider: {settings.LLM_PROVIDER}")
+    if settings.LLM_PROVIDER == "ollama":
+        print(f"  Ollama URL: {settings.OLLAMA_BASE_URL}")
+        print(f"  Modelo: {settings.OLLAMA_MODEL}")
     print()
-    print("=" * 60)
+    print("  WARNING: Esta API no tiene autenticacion.")
+    print("  WARNING: No exponer en produccion sin seguridad.")
+    print()
+    print("=" * 70)
     print()
     print("Endpoints disponibles:")
-    print("  GET  /           - Info de la API")
-    print("  GET  /health     - Health check")
-    print("  GET  /datasets   - Listar archivos disponibles")
-    print("  POST /reports/download - Descargar reporte en formato")
-    print("  POST /analyze    - Analizar logs")
+    print("  GET  /              - Info de la API")
+    print("  GET  /health        - Health check")
+    print("  POST /reports/download - Generar y descargar reporte")
     print()
     print("Swagger UI: http://localhost:8080/apidocs")
     print("Iniciando servidor en http://0.0.0.0:8080")

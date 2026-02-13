@@ -39,10 +39,27 @@ class ReportRequest:
 
 		if self.context is None:
 			self.context = {}
+		
+		# Validar que context tenga el campo requerido 'tool'
+		if self.context is not None and not isinstance(self.context, dict):
+			raise ValidationError("Field 'context' must be an object")
+		
+		if self.context:
+			if 'tool' not in self.context:
+				raise ValidationError("Missing required field in context: tool")
+			
+			# Validar que solo tenga propiedades permitidas (cerrado)
+			allowed_keys = {'tool', 'environment'}
+			invalid_keys = set(self.context.keys()) - allowed_keys
+			if invalid_keys:
+				raise ValidationError(
+					f"Invalid properties in context: {', '.join(invalid_keys)}. "
+					f"Allowed: {', '.join(allowed_keys)}"
+				)
 
 	@classmethod
 	def from_dict(cls, data: Dict[str, object]) -> "ReportRequest":
-		required_fields = ["report_name", "format", "input_text", "llm_enabled"]
+		required_fields = ["report_name", "format", "input_text", "llm_enabled", "context"]
 		missing = [
 			field for field in required_fields
 			if field not in data or data[field] in (None, "")
@@ -59,13 +76,30 @@ class ReportRequest:
 				f"Format not supported: {format_value}"
 			)
 
+		# Validar context antes de crear la instancia
+		context = data.get("context")
+		if context is not None:
+			if not isinstance(context, dict):
+				raise ValidationError("Field 'context' must be an object")
+			
+			# Validar propiedades permitidas
+			allowed_keys = {'tool', 'environment'}
+			provided_keys = set(context.keys())
+			invalid_keys = provided_keys - allowed_keys
+			
+			if invalid_keys:
+				raise ValidationError(
+					f"Invalid properties in context: {', '.join(invalid_keys)}. "
+					f"Allowed: {', '.join(allowed_keys)}"
+				)
+
 		return cls(
 			report_name=str(data["report_name"]),
 			format=ReportFormat(format_value),
 			input_text=str(data["input_text"]),
 			llm_enabled=bool(data["llm_enabled"]),
 			run_id=data.get("run_id"),
-			context=data.get("context")
+			context=context or {}
 		)
 
 
