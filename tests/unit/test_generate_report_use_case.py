@@ -1,28 +1,6 @@
-from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from typing import Dict
-
-from src.domain.use_cases import GenerateReportUseCase
-from src.ports.cache_port import CachePort
-from src.config.settings import settings
-
-
-class FakeLogReader:
-    def read_log(self, source: str) -> str:
-        return "log"
-
-
-class FakeAnalyzer:
-    def analyze(self, log_text: str) -> Dict:
-        return {
-            "summary": {"total_events": 1, "total_errors": 0, "total_warnings": 0},
-            "error_groups": [],
-            "warnings": [],
-            "events": []
-        }
+from src.domain.reporting.dtos import ReportRequest
+from src.domain.reporting.enums import ReportFormat
+from src.domain.reporting.use_case import GenerateReportUseCase
 
 
 class FakeLLM:
@@ -31,56 +9,40 @@ class FakeLLM:
 
     def generate_text(self, prompt: str, system_prompt: str = None) -> str:
         self.calls += 1
-        return "report"
+        return "Narrative summary"
 
 
-class FakeReportWriter:
-    def __init__(self):
-        self.report_calls = 0
-
-    def write_analysis(self, run_id: str, analysis: Dict) -> str:
-        return f"/tmp/{run_id}.json"
-
-    def write_report(
-        self,
-        run_id: str,
-        report_content: str,
-        report_format: str = "markdown",
-        analysis: Dict = None
-    ) -> str:
-        self.report_calls += 1
-        return f"/tmp/{run_id}.{report_format}"
-
-
-class FakeCache(CachePort):
-    def __init__(self):
-        self.store = {}
-
-    def get(self, key: str):
-        return self.store.get(key)
-
-    def set(self, key: str, value, ttl_seconds: int = 60) -> None:
-        self.store[key] = value
-
-    def invalidate(self, key: str) -> None:
-        self.store.pop(key, None)
-
-
-def test_generate_report_uses_cache():
-    settings.CACHE_ENABLED = True
-    settings.CACHE_TTL_SECONDS = 60
-
-    cache = FakeCache()
-    llm = FakeLLM()
-    use_case = GenerateReportUseCase(
-        log_reader=FakeLogReader(),
-        analyzer=FakeAnalyzer(),
-        llm=llm,
-        report_writer=FakeReportWriter(),
-        cache=cache
+def test_generate_report_with_llm_disabled_returns_deterministic_only():
+    use_case = GenerateReportUseCase(llm=FakeLLM())
+    request = ReportRequest(
+        report_name="report",
+        format=ReportFormat.TXT,
+        input_text="one two\nthree",
+        llm_enabled=False,
+        run_id="run-1"
     )
 
-    use_case.execute(log_text="log", run_id="run1")
-    use_case.execute(log_text="log", run_id="run1")
+    result = use_case.execute(request)
+
+    assert result.narrative is None
+    assert result.deterministic.line_count == 2
+    assert result.deterministic.word_count == 3
+
+
+def test_generate_report_with_llm_enabled_adds_narrative():
+    llm = FakeLLM()
+    use_case = GenerateReportUseCase(llm=llm)
+    request = ReportRequest(
+        report_name="report",
+        format=ReportFormat.TXT,
+        input_text="one two\nthree",
+        llm_enabled=True,
+        run_id="run-2"
+    )
+
+    result = use_case.execute(request)
 
     assert llm.calls == 1
+    assert result.narrative is not None
+    assert result.narrative.summary == "Narrative summary"
+    assert result.deterministic.line_count == 2

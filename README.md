@@ -165,6 +165,8 @@ python app/api.py
 
 El servidor iniciará en `http://localhost:5000`
 
+**Aviso**: Esta API no incluye autenticacion. No exponer en produccion sin un proxy o capa de seguridad.
+
 #### Endpoints disponibles:
 
 **GET /** - Información de la API
@@ -205,29 +207,21 @@ curl http://localhost:5000/datasets
 **POST /reports/download** - Generar y descargar reporte en formato
 
 ```bash
-# Descargar múltiples logs como CSV
+# Descargar reporte en CSV con input_text
 curl -X POST http://localhost:5000/reports/download \
   -H "Content-Type: application/json" \
   -d '{
     "report_name": "analisis_mensual",
     "format": "csv",
-    "files": ["log1.txt", "log2.txt"]
+    "input_text": "ERROR: ejemplo\nWARN: ejemplo",
+    "llm_enabled": false
   }' \
   -o analisis_mensual.csv
 
-# Formatos soportados: excel, txt, csv, doc
+# Formatos soportados: excel, csv, txt, markdown, doc
 ```
 
-**Respuesta exitosa:**
-```json
-{
-  "status": "success",
-  "file_path": "/app/out/reports/abc123def456_report.csv",
-  "size_bytes": 4096,
-  "format": "csv",
-  "name": "analisis_mensual"
-}
-```
+**Respuesta exitosa:** archivo binario descargable con header `Content-Disposition`.
 
 **POST /analyze** - Analizar logs
 

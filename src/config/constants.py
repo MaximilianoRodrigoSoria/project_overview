@@ -122,6 +122,12 @@ Usa formato Markdown profesional con secciones, bullets, code blocks y énfasis 
     ERROR_LLM_FAILED = "Error al llamar al LLM"
     ERROR_ANALYSIS_FAILED = "Error durante el análisis"
     ERROR_WRITE_FAILED = "Error al escribir archivo"
+
+    # Error codes (reporting)
+    ERROR_CODE_VALIDATION = "VALIDATION_ERROR"
+    ERROR_CODE_INVALID_FORMAT = "INVALID_FORMAT"
+    ERROR_CODE_LLM_PROVIDER = "LLM_PROVIDER_ERROR"
+    ERROR_CODE_REPORT_GENERATION = "REPORT_GENERATION_ERROR"
     
     # API
     API_ENDPOINT_ANALYZE = "/analyze"

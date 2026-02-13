@@ -35,6 +35,7 @@ from src.domain.reporting.dtos import ReportRequest as ReportingRequest
 from src.domain.reporting.use_case import GenerateReportUseCase as ReportingGenerateReportUseCase
 from src.domain.reporting.enums import ReportFormat
 from src.domain.reporting.exceptions import (
+  ReportingError,
   InvalidFormatError,
   ValidationError,
   ReportGenerationError,
@@ -238,68 +239,117 @@ def list_datasets():
         }), 500
 
 
-    @app.route("/reports/download", methods=["POST"])
-    def download_report():
-      """Generate a report and return it as a downloadable attachment."""
-      if not request.is_json:
-        return jsonify({
-          "status": "error",
-          "error_code": "VALIDATION_ERROR",
-          "message": "Content-Type must be application/json",
-          "run_id": None
-        }), 400
+@app.route("/reports/download", methods=["POST"])
+def download_report():
+    """Generate a report and return it as a downloadable attachment.
+    ---
+    tags:
+      - Reports
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - report_name
+            - format
+            - input_text
+            - llm_enabled
+          properties:
+            report_name:
+              type: string
+              example: audit_001
+            format:
+              type: string
+              enum: [excel, csv, txt, markdown, doc]
+              example: excel
+            input_text:
+              type: string
+              example: sample text to analyze
+            run_id:
+              type: string
+              example: run-001
+            llm_enabled:
+              type: boolean
+              example: true
+            context:
+              type: object
+              additionalProperties: true
+        examples:
+          excel:
+            report_name: audit_001
+            format: excel
+            input_text: sample text to analyze
+            llm_enabled: true
+          csv:
+            report_name: audit_002
+            format: csv
+            input_text: sample text to analyze
+            llm_enabled: false
+    responses:
+      200:
+        description: Binary report file
+      400:
+        description: Validation error
+      422:
+        description: Invalid format
+      500:
+        description: Report generation error
+    """
+    if not request.is_json:
+        raise ValidationError("Content-Type must be application/json")
 
-      data = request.get_json() or {}
-      run_id = None
+    data = request.get_json() or {}
+    report_request = ReportingRequest.from_dict(data)
 
-      try:
-        report_request = ReportingRequest.from_dict(data)
-        run_id = report_request.run_id
+    result = reporting_use_case.execute(report_request)
+    payload = reporting_use_case.to_writer_payload(result)
+    writer = get_writer(result.format)
 
-        result = reporting_use_case.execute(report_request)
-        payload = reporting_use_case.to_writer_payload(result)
-        writer = get_writer(result.format)
+    try:
         content = writer.write(payload)
+    except Exception as exc:
+        raise ReportGenerationError(str(exc), run_id=report_request.run_id)
 
-        format_mime = {
-          ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
-          ReportFormat.CSV: Constants.MIME_TYPE_CSV,
-          ReportFormat.TXT: Constants.MIME_TYPE_TXT,
-          ReportFormat.MARKDOWN: "text/markdown",
-          ReportFormat.DOC: Constants.MIME_TYPE_DOC,
-        }
+    format_mime = {
+        ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
+        ReportFormat.CSV: Constants.MIME_TYPE_CSV,
+        ReportFormat.TXT: Constants.MIME_TYPE_TXT,
+        ReportFormat.MARKDOWN: "text/markdown",
+        ReportFormat.DOC: Constants.MIME_TYPE_DOC,
+    }
 
-        format_ext = {
-          ReportFormat.EXCEL: ".xlsx",
-          ReportFormat.CSV: ".csv",
-          ReportFormat.TXT: ".txt",
-          ReportFormat.MARKDOWN: ".md",
-          ReportFormat.DOC: ".doc",
-        }
+    format_ext = {
+        ReportFormat.EXCEL: ".xlsx",
+        ReportFormat.CSV: ".csv",
+        ReportFormat.TXT: ".txt",
+        ReportFormat.MARKDOWN: ".md",
+        ReportFormat.DOC: ".doc",
+    }
 
-        filename = f"{report_request.report_name}{format_ext[result.format]}"
+    filename = f"{report_request.report_name}{format_ext[result.format]}"
 
-        response = Response(content, mimetype=format_mime[result.format])
-        response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
-        response.headers["X-Run-Id"] = run_id
-        return response
+    response = Response(content, mimetype=format_mime[result.format])
+    response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
+    response.headers["X-Run-Id"] = report_request.run_id
+    return response
 
-      except (ValidationError, InvalidFormatError) as exc:
-        return jsonify({
-          "status": "error",
-          "error_code": exc.error_code,
-          "message": exc.message,
-          "run_id": run_id
-        }), 400 if isinstance(exc, ValidationError) else 422
 
-      except Exception as exc:
-        error = ReportGenerationError(str(exc), run_id=run_id)
-        return jsonify({
-          "status": "error",
-          "error_code": error.error_code,
-          "message": error.message,
-          "run_id": run_id
-        }), 500
+@app.errorhandler(ReportingError)
+def handle_reporting_error(error: ReportingError):
+    status_code = 500
+    if isinstance(error, ValidationError):
+        status_code = 400
+    elif isinstance(error, InvalidFormatError):
+        status_code = 422
+
+    return jsonify({
+        "status": "error",
+        "error_code": error.error_code,
+        "message": error.message,
+        "run_id": error.run_id
+    }), status_code
 
 
 @app.route(Constants.API_ENDPOINT_ANALYZE, methods=["POST"])

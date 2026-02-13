@@ -1,7 +1,7 @@
 """DTOs for reporting domain."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from .enums import ReportFormat
@@ -107,5 +107,5 @@ class ReportResult:
 	format: ReportFormat
 	deterministic: DeterministicAnalysis
 	narrative: Optional[NarrativeSection] = None
-	generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+	generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
