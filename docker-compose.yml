@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  log-analyzer:
+    build: .
+    container_name: log-analyzer-api
+    ports:
+      - "8080:8080"
+    environment:
+      # Proveedor LLM
+      LLM_PROVIDER: ollama
+      # Configuración de Ollama
+      # En Windows/Mac, usar host.docker.internal
+      # En Linux, usar la IP del host o red=host
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: mistral
+
+      # Cache
+      CACHE_ENABLED: "true"
+      CACHE_TTL_SECONDS: "60"
+
+      # Reporte
+      REPORT_FORMAT: excel
+      
+      # Directorio de salida
+      OUT_DIR: /app/out
+      
+      # Directorio de datasets
+      DATASETS_DIR: /app/datasets
+      
+      # Límite de archivos para descargar
+      REPORT_DOWNLOAD_MAX_FILES: "10"
+      
+      # Logging
+      LOG_LEVEL: INFO
+      
+      # Timeout
+      REQUEST_TIMEOUT_SECONDS: 120
+    
+    volumes:
+      # Montar datasets para agregar logs dinámicamente
+      - ./datasets:/app/datasets:ro
+      
+      # Montar outputs para persistencia
+      - ./out:/app/out
+    
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    networks:
+      - log-analyzer-net
+
+networks:
+  log-analyzer-net:
+    driver: bridge
+
+# Para usar con Ollama también en Docker:
+# Descomentar este servicio y cambiar OLLAMA_BASE_URL a http://ollama:11434
+#
+# services:
+#   ollama:
+#     image: ollama/ollama:latest
+#     container_name: ollama
+#     ports:
+#       - "11434:11434"
+#     volumes:
+#       - ollama-data:/root/.ollama
+#     networks:
+#       - log-analyzer-net
+#
+# volumes:
+#   ollama-data:

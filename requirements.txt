@@ -1,0 +1,44 @@
+# Log Analyzer - Dependencias del proyecto
+# Instalación: pip install -r requirements.txt
+
+# HTTP client para Ollama
+requests==2.31.0
+
+# Excel report generation
+openpyxl==3.1.5
+
+# Word document generation
+python-docx==1.1.2
+
+# Framework web para API
+flask==3.0.0
+
+# Swagger UI para Flask
+flasgger==0.9.7.1
+
+# Servidor WSGI para producción (opcional)
+# gunicorn==21.2.0  # Solo para Linux/Mac
+
+# Dependencias de Flask
+werkzeug==3.0.1
+jinja2==3.1.2
+click==8.1.7
+itsdangerous==2.1.2
+
+# Dependencias de Flasgger
+pyyaml==6.0.1
+jsonschema==4.20.0
+mistune==3.0.2
+
+# Testing
+pytest==8.3.4
+
+# Utilidades estándar (ya incluidas en Python, listadas por completitud)
+# - logging (stdlib)
+# - re (stdlib)
+# - json (stdlib)
+# - pathlib (stdlib)
+# - dataclasses (stdlib Python 3.7+)
+# - typing (stdlib Python 3.5+)
+# - uuid (stdlib)
+# - argparse (stdlib)
