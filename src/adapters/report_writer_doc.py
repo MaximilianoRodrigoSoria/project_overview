@@ -152,3 +152,59 @@ class DocReportWriter:
                 safe_result += f"\\u{code}?"
         
         return safe_result
+
+
+class DocBytesWriter:
+    """Generate DOC (RTF) report content as bytes for API downloads."""
+
+    def write(self, report_data: Dict) -> bytes:
+        deterministic = report_data.get("deterministic", {})
+        narrative = report_data.get("narrative")
+
+        content_lines = ["Report Summary"]
+        for key, value in deterministic.items():
+            content_lines.append(f"{key}: {value}")
+
+        if narrative:
+            content_lines.append("")
+            content_lines.append("Narrative")
+            content_lines.append(narrative.get("summary", ""))
+
+        content = "\n".join(content_lines)
+        rtf = self._generate_rtf(content)
+        return rtf.encode("utf-8")
+
+    def _generate_rtf(self, report_content: str) -> str:
+        escaped_content = self._escape_rtf(report_content)
+        rtf = "{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033\n"
+        rtf += "{\\fonttbl{\\f0\\fnil\\fcharset0 Calibri;}}\n"
+        rtf += "{\\colortbl;\\red0\\green0\\blue0;}\n"
+        rtf += "\\viewkind4\\uc1\\pard\\f0\\fs20\n"
+        rtf += escaped_content + "\\par\n"
+        rtf += "}"
+        return rtf
+
+    def _escape_rtf(self, text: str) -> str:
+        replacements = {
+            "\\": "\\\\",
+            "{": "\\{",
+            "}": "\\}",
+            "\n": "\\par\n",
+            "\t": "\\tab ",
+        }
+
+        result = text
+        for old, new in replacements.items():
+            result = result.replace(old, new)
+
+        safe_result = ""
+        for char in result:
+            code = ord(char)
+            if 32 <= code <= 126 and char not in "\\{}":
+                safe_result += char
+            elif code < 256:
+                safe_result += f"\\'{'%02x' % code}"
+            else:
+                safe_result += f"\\u{code}?"
+
+        return safe_result

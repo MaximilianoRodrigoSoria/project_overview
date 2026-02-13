@@ -4,6 +4,7 @@ Implementa ReportWriterPort para generar archivos de texto simples.
 """
 
 import logging
+from io import StringIO
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -53,3 +54,27 @@ class TextReportWriter:
         except Exception as e:
             logger.error(f"Error al escribir reporte de texto: {e}")
             raise IOError(f"Error al escribir archivo: {e}") from e
+
+
+class TextBytesWriter:
+    """Generate plain text report content as bytes for API downloads."""
+
+    def write(self, report_data: Dict) -> bytes:
+        output = StringIO()
+        output.write("Report Summary\n")
+
+        deterministic = report_data.get("deterministic", {})
+        for key, value in deterministic.items():
+            output.write(f"{key}: {value}\n")
+
+        narrative = report_data.get("narrative")
+        if narrative:
+            output.write("\nNarrative\n")
+            output.write(f"summary: {narrative.get('summary', '')}\n")
+            insights = narrative.get("insights", [])
+            if insights:
+                output.write("insights:\n")
+                for insight in insights:
+                    output.write(f"- {insight}\n")
+
+        return output.getvalue().encode("utf-8")

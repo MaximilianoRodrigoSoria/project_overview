@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: LLM Reporting Core API
+  version: 1.0.0
+  description: API for generating downloadable reports with deterministic analysis and optional LLM narrative.
+servers:
+  - url: http://localhost:5000
+paths:
+  /reports/download:
+    post:
+      summary: Generate and download a report
+      operationId: downloadReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportRequest"
+            examples:
+              excel:
+                summary: Excel report
+                value:
+                  report_name: audit_001
+                  format: excel
+                  input_text: "sample text to analyze"
+                  run_id: run-001
+                  llm_enabled: true
+                  context:
+                    tool: generic
+              csv:
+                summary: CSV report without narrative
+                value:
+                  report_name: audit_002
+                  format: csv
+                  input_text: "sample text to analyze"
+                  llm_enabled: false
+      responses:
+        "200":
+          description: Binary report file
+          headers:
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+              example: attachment; filename="audit_001.xlsx"
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+                format: binary
+            text/markdown:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                error_code: VALIDATION_ERROR
+                message: Missing required field: input_text
+                run_id: run-123
+        "422":
+          description: Invalid format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                error_code: INVALID_FORMAT
+                message: Format not supported
+                run_id: run-124
+        "500":
+          description: Report generation or LLM provider error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                error_code: REPORT_GENERATION_ERROR
+                message: Failed to generate report
+                run_id: run-125
+components:
+  schemas:
+    ReportFormat:
+      type: string
+      enum:
+        - excel
+        - csv
+        - txt
+        - markdown
+        - doc
+      example: excel
+    ReportRequest:
+      type: object
+      required:
+        - report_name
+        - format
+        - input_text
+        - llm_enabled
+      properties:
+        report_name:
+          type: string
+        format:
+          $ref: "#/components/schemas/ReportFormat"
+        input_text:
+          type: string
+        run_id:
+          type: string
+        llm_enabled:
+          type: boolean
+        context:
+          type: object
+          additionalProperties: true
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - error_code
+        - message
+        - run_id
+      properties:
+        status:
+          type: string
+          example: error
+        error_code:
+          type: string
+        message:
+          type: string
+        run_id:
+          type: string

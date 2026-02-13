@@ -3,6 +3,7 @@ Adapter para generar reportes Excel.
 """
 
 import logging
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -120,3 +121,31 @@ class ExcelReportWriter:
                     continue
                 max_len = max(max_len, len(str(cell.value)))
             sheet.column_dimensions[col_letter].width = max_len
+
+
+class ExcelBytesWriter:
+    """Generate Excel report content as bytes for API downloads."""
+
+    def write(self, report_data: Dict) -> bytes:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "summary"
+
+        sheet.cell(row=1, column=1, value="Metric")
+        sheet.cell(row=1, column=2, value="Value")
+
+        deterministic = report_data.get("deterministic", {})
+        row_index = 2
+        for key, value in deterministic.items():
+            sheet.cell(row=row_index, column=1, value=key)
+            sheet.cell(row=row_index, column=2, value=value)
+            row_index += 1
+
+        narrative = report_data.get("narrative")
+        if narrative:
+            sheet.cell(row=row_index, column=1, value="narrative")
+            sheet.cell(row=row_index, column=2, value=narrative.get("summary", ""))
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        return buffer.getvalue()

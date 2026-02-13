@@ -1,203 +1,104 @@
 """
-Contract tests para el endpoint /reports/download.
-Verifica que la API cumpla con las especificaciones del contrato OpenAPI.
+Contract tests for the /reports/download endpoint.
 """
 
-import tempfile
-from pathlib import Path
 import pytest
-from unittest.mock import patch
 
 from app.api import create_app
 
 
 class TestReportDownloadEndpoint:
-    """Tests de contrato para POST /reports/download"""
+    """Contract tests for POST /reports/download"""
 
     def test_download_endpoint_accepts_json_request(self):
-        """Debe aceptar solicitudes JSON con report_name, format, files"""
+        """Accepts JSON with report_name, format, input_text, llm_enabled"""
         app = create_app()
-        
+
         with app.test_client() as client:
             payload = {
                 "report_name": "test_report",
                 "format": "txt",
-                "files": ["test.txt"]
+                "input_text": "sample text",
+                "llm_enabled": False
             }
-            
-            response = client.post(
-                '/reports/download',
-                json=payload,
-                content_type='application/json'
-            )
-            
-            # Puede fallar por archivos no encontrados, pero debe responder
-            assert response.status_code in [200, 400, 404, 500]
 
-    def test_download_endpoint_requires_report_name(self):
-        """Debe rechazar solicitud sin report_name"""
-        app = create_app()
-        
-        with app.test_client() as client:
-            payload = {
-                "format": "txt",
-                "files": ["test.txt"]
-            }
-            
             response = client.post(
-                '/reports/download',
+                "/reports/download",
                 json=payload,
-                content_type='application/json'
+                content_type="application/json"
             )
-            
-            assert response.status_code == 400
-            data = response.get_json()
-            assert "error" in data
 
-    def test_download_endpoint_requires_format(self):
-        """Debe rechazar solicitud sin format"""
-        app = create_app()
-        
-        with app.test_client() as client:
-            payload = {
-                "report_name": "test",
-                "files": ["test.txt"]
-            }
-            
-            response = client.post(
-                '/reports/download',
-                json=payload,
-                content_type='application/json'
-            )
-            
-            assert response.status_code == 400
+            assert response.status_code == 200
 
-    def test_download_endpoint_requires_files(self):
-        """Debe rechazar solicitud sin files"""
+    @pytest.mark.parametrize("field", [
+        "report_name",
+        "format",
+        "input_text",
+        "llm_enabled",
+    ])
+    def test_download_endpoint_requires_fields(self, field):
+        """Rejects requests missing required fields"""
         app = create_app()
-        
-        with app.test_client() as client:
-            payload = {
-                "report_name": "test",
-                "format": "txt"
-            }
-            
-            response = client.post(
-                '/reports/download',
-                json=payload,
-                content_type='application/json'
-            )
-            
-            assert response.status_code == 400
 
-    def test_download_endpoint_requires_files_non_empty(self):
-        """Debe rechazar solicitud con files vacío"""
-        app = create_app()
-        
+        payload = {
+            "report_name": "test",
+            "format": "txt",
+            "input_text": "sample",
+            "llm_enabled": False
+        }
+        payload.pop(field)
+
         with app.test_client() as client:
-            payload = {
-                "report_name": "test",
-                "format": "txt",
-                "files": []
-            }
-            
             response = client.post(
-                '/reports/download',
+                "/reports/download",
                 json=payload,
-                content_type='application/json'
+                content_type="application/json"
             )
-            
+
             assert response.status_code == 400
 
     def test_download_endpoint_validates_format(self):
-        """Debe rechazar formatos no soportados"""
+        """Rejects unsupported formats"""
         app = create_app()
-        
+
         with app.test_client() as client:
             payload = {
                 "report_name": "test",
-                "format": "pdf",  # No soportado
-                "files": ["test.txt"]
+                "format": "pdf",
+                "input_text": "sample",
+                "llm_enabled": False
             }
-            
+
             response = client.post(
-                '/reports/download',
+                "/reports/download",
                 json=payload,
-                content_type='application/json'
+                content_type="application/json"
             )
-            
-            assert response.status_code == 400
 
-    def test_download_endpoint_supports_excel_format(self):
-        """Debe aceptar format: excel"""
-        app = create_app()
-        
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            test_file = Path(tmp_dir) / "test.txt"
-            test_file.write_text("test content")
-            
-            with patch('app.api.settings.DATASETS_DIR', tmp_dir):
-                with app.test_client() as client:
-                    payload = {
-                        "report_name": "test",
-                        "format": "excel",
-                        "files": ["test.txt"]
-                    }
-                    
-                    response = client.post(
-                        '/reports/download',
-                        json=payload,
-                        content_type='application/json'
-                    )
-                    
-                    # Puede ser error de análisis/LLM, pero no de validación
-                    assert response.status_code != 400
+            assert response.status_code == 422
 
-    def test_download_endpoint_supports_txt_format(self):
-        """Debe aceptar format: txt"""
+    @pytest.mark.parametrize("format_value", ["excel", "txt", "csv", "markdown", "doc"])
+    def test_download_endpoint_supports_formats(self, format_value):
+        """Accepts all supported formats"""
         app = create_app()
-        
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            test_file = Path(tmp_dir) / "test.txt"
-            test_file.write_text("test content")
-            
-            with patch('app.api.settings.DATASETS_DIR', tmp_dir):
-                with app.test_client() as client:
-                    payload = {
-                        "report_name": "test",
-                        "format": "txt",
-                        "files": ["test.txt"]
-                    }
-                    
-                    response = client.post(
-                        '/reports/download',
-                        json=payload,
-                        content_type='application/json'
-                    )
-                    
-                    assert response.status_code != 400
 
-    def test_download_endpoint_supports_csv_format(self):
-        """Debe aceptar format: csv"""
-        app = create_app()
-        
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            test_file = Path(tmp_dir) / "test.txt"
-            test_file.write_text("test content")
-            
-            with patch('app.api.settings.DATASETS_DIR', tmp_dir):
-                with app.test_client() as client:
-                    payload = {
-                        "report_name": "test",
-                        "format": "csv",
-                        "files": ["test.txt"]
-                    }
-                    
-                    response = client.post(
-                        '/reports/download',
-                        json=payload,
-                        content_type='application/json'
-                    )
+        with app.test_client() as client:
+            payload = {
+                "report_name": "test",
+                "format": format_value,
+                "input_text": "sample",
+                "llm_enabled": False
+            }
+
+            response = client.post(
+                "/reports/download",
+                json=payload,
+                content_type="application/json"
+            )
+
+            assert response.status_code == 200
+            assert "Content-Disposition" in response.headers
+            assert "X-Run-Id" in response.headers
                     
                     assert response.status_code != 400
 

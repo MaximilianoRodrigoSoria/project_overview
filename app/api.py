@@ -20,7 +20,7 @@ from pathlib import Path
 # Agregar el directorio raíz al path para importar src
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flasgger import Swagger, swag_from
 import logging
 
@@ -31,11 +31,20 @@ from src.domain.use_cases import GenerateReportUseCase, ListLogsUseCase, Downloa
 from src.domain.analyze_use_case import AnalyzeLogUseCase
 from src.domain.dtos import AnalyzeRequest, ErrorResponse
 from src.domain.enums import OutputFormat
+from src.domain.reporting.dtos import ReportRequest as ReportingRequest
+from src.domain.reporting.use_case import GenerateReportUseCase as ReportingGenerateReportUseCase
+from src.domain.reporting.enums import ReportFormat
+from src.domain.reporting.exceptions import (
+  InvalidFormatError,
+  ValidationError,
+  ReportGenerationError,
+)
 from src.adapters.log_reader_fs import FileSystemLogReader
 from src.domain.log_analyzer.analyzer import LogAnalyzer
 from src.adapters.llm_factory import create_llm
 from src.adapters.cache_memory import MemoryCache
 from src.adapters.report_writer_fs import FileSystemReportWriter
+from src.adapters.report_writer_factory import get_writer
 
 
 # Configurar logging
@@ -114,6 +123,8 @@ download_report_use_case = DownloadReportUseCase(
     cache=cache,
     max_files=settings.REPORT_DOWNLOAD_MAX_FILES
 )
+
+reporting_use_case = ReportingGenerateReportUseCase(llm=llm)
 
 analyze_use_case = AnalyzeLogUseCase(
     log_reader=log_reader,
@@ -224,6 +235,70 @@ def list_datasets():
         return jsonify({
             Constants.API_RESPONSE_STATUS: Constants.STATUS_ERROR,
             Constants.API_RESPONSE_ERROR: str(e)
+        }), 500
+
+
+    @app.route("/reports/download", methods=["POST"])
+    def download_report():
+      """Generate a report and return it as a downloadable attachment."""
+      if not request.is_json:
+        return jsonify({
+          "status": "error",
+          "error_code": "VALIDATION_ERROR",
+          "message": "Content-Type must be application/json",
+          "run_id": None
+        }), 400
+
+      data = request.get_json() or {}
+      run_id = None
+
+      try:
+        report_request = ReportingRequest.from_dict(data)
+        run_id = report_request.run_id
+
+        result = reporting_use_case.execute(report_request)
+        payload = reporting_use_case.to_writer_payload(result)
+        writer = get_writer(result.format)
+        content = writer.write(payload)
+
+        format_mime = {
+          ReportFormat.EXCEL: Constants.MIME_TYPE_EXCEL,
+          ReportFormat.CSV: Constants.MIME_TYPE_CSV,
+          ReportFormat.TXT: Constants.MIME_TYPE_TXT,
+          ReportFormat.MARKDOWN: "text/markdown",
+          ReportFormat.DOC: Constants.MIME_TYPE_DOC,
+        }
+
+        format_ext = {
+          ReportFormat.EXCEL: ".xlsx",
+          ReportFormat.CSV: ".csv",
+          ReportFormat.TXT: ".txt",
+          ReportFormat.MARKDOWN: ".md",
+          ReportFormat.DOC: ".doc",
+        }
+
+        filename = f"{report_request.report_name}{format_ext[result.format]}"
+
+        response = Response(content, mimetype=format_mime[result.format])
+        response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
+        response.headers["X-Run-Id"] = run_id
+        return response
+
+      except (ValidationError, InvalidFormatError) as exc:
+        return jsonify({
+          "status": "error",
+          "error_code": exc.error_code,
+          "message": exc.message,
+          "run_id": run_id
+        }), 400 if isinstance(exc, ValidationError) else 422
+
+      except Exception as exc:
+        error = ReportGenerationError(str(exc), run_id=run_id)
+        return jsonify({
+          "status": "error",
+          "error_code": error.error_code,
+          "message": error.message,
+          "run_id": run_id
         }), 500
 
 

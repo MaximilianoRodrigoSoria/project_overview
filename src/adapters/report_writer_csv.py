@@ -5,6 +5,7 @@ Implementa ReportWriterPort para generar archivos CSV tabular desde análisis es
 
 import logging
 import csv
+from io import StringIO
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -76,3 +77,28 @@ class CSVReportWriter:
         except Exception as e:
             logger.error(f"Error al escribir reporte CSV: {e}")
             raise IOError(f"Error al escribir archivo CSV: {e}") from e
+
+
+class CSVBytesWriter:
+    """Generate CSV report content as bytes for API downloads."""
+
+    def write(self, report_data: Dict) -> bytes:
+        output = StringIO()
+        writer = csv.writer(output)
+
+        writer.writerow(["Metric", "Value"])
+
+        deterministic = report_data.get("deterministic", {})
+        for key, value in deterministic.items():
+            writer.writerow([key, value])
+
+        narrative = report_data.get("narrative")
+        if narrative:
+            writer.writerow([])
+            writer.writerow(["Narrative", "Value"])
+            writer.writerow(["summary", narrative.get("summary", "")])
+            insights = narrative.get("insights", [])
+            if insights:
+                writer.writerow(["insights", " | ".join(insights)])
+
+        return output.getvalue().encode("utf-8")
