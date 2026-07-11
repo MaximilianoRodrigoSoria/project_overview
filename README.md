@@ -1,3 +1,12 @@
+<!-- dynamic-badges -->
+<p align="center">
+  <a href="https://github.com/MaximilianoRodrigoSoria/project_overview/actions"><img src="https://img.shields.io/github/actions/workflow/status/MaximilianoRodrigoSoria/project_overview/ci.yml?style=flat-square&logo=githubactions&logoColor=white&label=CI&labelColor=1A1C1F&color=06C69C" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MaximilianoRodrigoSoria/project_overview?style=flat-square&labelColor=1A1C1F&color=06C69C" alt="License"></a>
+  <img src="https://img.shields.io/github/last-commit/MaximilianoRodrigoSoria/project_overview?style=flat-square&labelColor=1A1C1F&color=06C69C" alt="Last commit">
+  <a href="https://maximilianorodrigosoria.github.io/project_overview/"><img src="https://img.shields.io/badge/GitHub_Pages-online-02ECB6?style=flat-square&logo=githubpages&logoColor=white&labelColor=1A1C1F" alt="Pages"></a>
+  <img src="https://img.shields.io/badge/Python-3.12-06C69C?style=flat-square&logo=python&logoColor=white&labelColor=1A1C1F" alt="lang">
+</p>
+
 # 📊 Log Analyzer
 
 ![Banner](docs/imgs/banner.gif)
